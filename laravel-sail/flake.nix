@@ -99,7 +99,6 @@
               function cleanup() {
                 echo Cleaning up...
                 pkill "$DOCKER_PID"
-                sleep 7
                 exit
               }
               trap cleanup SIGINT
@@ -287,9 +286,9 @@
             pre-commit install
 
             # .env setup (This can't be a symlink, laravel does not like that)
-            envPath="${writeDotEnv dotEnv}"
-            # write the env only when something changed
-            echo -e "$(cat $envPath)" > .env
+            # I suppose converting a set to a string, writing that to nix store then reading that string from the store file
+            # to echo it into another file is not the most straightforward method of doing that but who cares.
+            echo -e "$(cat ${writeDotEnv dotEnv})" > .env
           '';
         };
       in
