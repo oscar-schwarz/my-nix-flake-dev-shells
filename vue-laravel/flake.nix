@@ -43,7 +43,7 @@
             map (attr: 
               let
                 # Just quote all values, won't hurt
-                value = "\"" + (builtins.getAttr attr set) + "\"";
+                value = builtins.getAttr attr set;
               in
                 "${attr}=${value}"
             ) (builtins.attrNames set)
@@ -74,7 +74,7 @@
 
 
         # PHP
-        phpPackageName = "php83";
+        phpPackageName = "php82";
         php = pkgs.${phpPackageName};
         composer = pkgs.${"${phpPackageName}Packages"}.composer;
         # Some common extensions used in many projects
@@ -196,7 +196,9 @@
 
         dotEnv = {
           APP_NAME = "Laravel-App";
+          APP_DEBUG = "true";
           APP_URL = "http://127.0.0.1:8000";
+          APP_KEY = "base64:Igl3VDbdMSWnCDABL7k9ioK8hJ1EKgM25kh6vnxUntQ="; # This has to be set
 
           TOKEN_VALID = "14";
           TOKEN_LENGTH = "16";
@@ -245,6 +247,8 @@
             phpExtensions ++
             shellScripts ++
           [
+            vscodiumWithExtensions
+            
             php
             composer
             nodejs

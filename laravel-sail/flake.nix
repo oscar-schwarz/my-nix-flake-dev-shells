@@ -42,7 +42,10 @@
           text = builtins.concatStringsSep "\n" (
             map (attr: 
               let
-                value = builtins.getAttr attr set;
+                # Add quotation marks to value if it contains spaces
+                containsChar = char: str: builtins.any (c: c == char) (lib.strings.stringToCharacters str);
+                raw = builtins.getAttr attr set;
+                value = if containsChar " " raw then ("\"" + raw + "\"") else raw;
               in
                 "${attr}=${value}"
             ) (builtins.attrNames set)
@@ -69,11 +72,24 @@
             "**/.git" = false;
           };
           "php.validate.executablePath" = lib.getExe pkgs.php83;
+          "php.debug.executablePath" = lib.getExe pkgs.php83;
         };
 
 
         # Useful scripts
         shellScripts = [
+          # Alias for ./vendor/bin/sail
+          (pkgs.writeShellApplication {
+            name = "sail";
+            text = ''sudo ./vendor/bin/sail "$@"'';
+          })
+
+          # Alias to quickly execute a command inside the container
+          (pkgs.writeShellApplication {
+            name = "run-in-sail";
+            text = ''sudo ./vendor/bin/sail exec --user root laravel.test """$@"""'';
+          })
+
           # A script meant to be run at when the repo is being set up
           # currently just creates keys and migrates
           (pkgs.writeShellApplication {
@@ -86,8 +102,8 @@
               fi
 
               # Set laravel keys and migrate
-              ./vendor/bin/sail exec --user root laravel.test php artisan passport:keys
-              ./vendor/bin/sail exec --user root laravel.test php artisan migrate
+              run-in-sail php artisan passport:keys
+              run-in-sail php artisan migrate
             '';
           })
 
@@ -103,13 +119,16 @@
               }
               trap cleanup SIGINT
 
-
               # Install sail
               ${lib.getExe pkgs.php83Packages.composer} install
 
+              # Sudo required
+              echo "This flake needs sudo access to work properly."
+              sudo echo "Access granted"
+
               # Run docker daemon
               # remove ">/dev/null 2>&1" for debugging, otherwise that info litters the terminal
-              ${pkgs.docker}/bin/dockerd-rootless & #>/dev/null 2>&1 &
+              sudo ${pkgs.docker}/bin/dockerd &#>/dev/null 2>&1 &
               DOCKER_PID="%last"
 
               
@@ -117,10 +136,10 @@
               sleep 3
 
               # Run sail container
-              ./vendor/bin/sail up -d
+              sail up -d
 
               # Run install node modules
-              ./vendor/bin/sail exec --user root laravel.test npm "install"
+              run-in-sail npm install
               # revert the package-lock changes
               ${lib.getExe pkgs.git} restore package-lock.json
 
@@ -130,9 +149,23 @@
                 sudo chmod -R 777 ./storage
               fi
 
-              # run vite (This is listening to CTRL+C
-              # It is run in root-shell of the container because of some permission issue
-              ./vendor/bin/sail exec -T --user root laravel.test npm run dev
+              # run vite (This is listening to CTRL+C)
+              # When the container has nodejs 20 then CTRL+C will literally crash it without the trap from above being triggered
+              ${pkgs.nodejs_18}/bin/npm run dev
+            '';
+          })
+
+          (pkgs.writeShellApplication {
+            name="appendIni";
+            text=''
+              # Another hack that fixes XDebug not starting up (I would add it to docker-compose but I have no clue how)
+              iniPath="/etc/php/8.3/cli/php.ini"
+              if [ "$(run-in-sail grep XDebug $iniPath)" = "" ]; then
+                # I have to this very weirdly beacause of the ">>" syntax which is not properly used inside the sail container
+                run-in-sail cp $iniPath TEMP
+                echo -e "[XDebug]\nstart_with_request=yes" >> TEMP
+                run-in-sail mv TEMP $iniPath
+              fi
             '';
           })
         ];
@@ -182,6 +215,12 @@
 
           # XDebug config
           SAIL_XDEBUG_MODE = "develop,debug,coverage";
+	        SAIL_XDEBUG_CONFIG = 
+               "client_host=0.0.0.0"
+            + " client_port=9003" # Make sure that this TCP port is allowed by your firewall (This took me literal days to find out)
+            + " start_with_request=yes"
+            + " log=/tmp/xdebug.log"
+          ;
 
           # Pusher variables (I don't use pusher, thats to disable the warning about 
           # them not being defined)
@@ -261,16 +300,20 @@
             shellScripts ++
           [
             vscodiumWithExtensions
-            
-            pkgs.pre-commit
+
+            # You probably won't need these packages because 'env-up' should deal with them but here you go anyway
+            pkgs.nodejs_18 # See above in 'env-up' for explanation
             pkgs.docker
             pkgs.git
+
+            # incase you need to do some stuff manually
+            pkgs.pre-commit
           ];
 
           # Generate necessary files and create symlinks to them
           shellHook = ''
+            # Docker needs that to function properly
             export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock
-            alias sail="sh vendor/bin/sail"
 
             echo "Entering Laravel-Sail Dev Environment"
 
@@ -283,11 +326,15 @@
 
             # Pre commit config
             ln -fs "${writeYaml gitConfig.pre-commit-config}" .pre-commit-config.yaml
-            pre-commit install
+            pre-commit install -f --hook-type pre-commit >/dev/null
 
             # .env setup (This can't be a symlink, laravel does not like that)
-            # I suppose converting a set to a string, writing that to nix store then reading that string from the store file
-            # to echo it into another file is not the most straightforward method of doing that but who cares.
+            # I suppose 
+            #  1. converting the set to a string
+            #  2. writing that to nix store 
+            #  3. reading that string from the file in the store
+            #  4. finally echoing it into the .env file 
+            # might not the most straightforward method of doing that but who cares.
             echo -e "$(cat ${writeDotEnv dotEnv})" > .env
           '';
         };
