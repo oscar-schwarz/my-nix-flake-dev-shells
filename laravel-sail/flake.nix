@@ -94,14 +94,6 @@
           (pkgs.writeShellApplication {
             name = "env-up";
             text = ''
-              # The function that is called on CTRL+C in the terminal
-              function cleanup() {
-                echo Cleaning up...
-                pkill "$DOCKER_PID"
-                exit
-              }
-              trap cleanup SIGINT
-
               # Install sail
               ${lib.getExe pkgs.php83Packages.composer} install
 
@@ -112,8 +104,6 @@
               # Run docker daemon
               # remove ">/dev/null 2>&1" for debugging, otherwise that info litters the terminal
               sudo ${pkgs.docker}/bin/dockerd &#>/dev/null 2>&1 &
-              DOCKER_PID="%last"
-
               
               # Wait for docker to boot
               sleep 3
