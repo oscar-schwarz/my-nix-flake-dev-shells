@@ -155,18 +155,10 @@
             '';
           })
 
+          # A small snippet to check if the types in the 'types.ts' file are in the correct order
           (pkgs.writeShellApplication {
-            name="appendIni";
-            text=''
-              # Another hack that fixes XDebug not starting up (I would add it to docker-compose but I have no clue how)
-              iniPath="/etc/php/8.3/cli/php.ini"
-              if [ "$(run-in-sail grep XDebug $iniPath)" = "" ]; then
-                # I have to this very weirdly beacause of the ">>" syntax which is not properly used inside the sail container
-                run-in-sail cp $iniPath TEMP
-                echo -e "[XDebug]\nstart_with_request=yes" >> TEMP
-                run-in-sail mv TEMP $iniPath
-              fi
-            '';
+            name = "check-types-ts";
+            text = ''grep -o '^export type \w\+' "''${@}" | sort --check'';
           })
         ];
 
@@ -278,8 +270,8 @@
                   {
                     id = "check-types-ts";
                     name = "Check export type declaration order";
-                    entry = "./scripts/check-types-ts";
-                    language = "script";
+                    entry = "check-types-ts"; # Declared above in 'shellScripts'
+                    language = "system";
                     files = "^resources/js/types\\.ts$";
                   }
                 ];
