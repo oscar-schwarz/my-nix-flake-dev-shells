@@ -1,5 +1,5 @@
 {
-  description = "A dev environment for a project with Laravel and Vue";
+  description = "A dev environment for a Laravel Sail project";
 
   inputs = {
     # Nix packages
@@ -67,7 +67,7 @@
 
         # VSCodium user settings
         vscodeUserSettings = {
-          "workbench.colorTheme" = "Default Dark+";
+          "workbench.colorTheme" = "Solarized Dark";
           "files.exclude" = {
             "**/.git" = false;
           };
@@ -88,23 +88,6 @@
           (pkgs.writeShellApplication {
             name = "run-in-sail";
             text = ''sudo ./vendor/bin/sail exec --user root laravel.test """$@"""'';
-          })
-
-          # A script meant to be run at when the repo is being set up
-          # currently just creates keys and migrates
-          (pkgs.writeShellApplication {
-            name="env-setup";
-            text=''
-              # Test if docker runs
-              if [ "$(pidof docker)" = "" ]; then
-                echo """Docker is not running. Make sure that you run \"env-up\" in another terminal."""
-                exit
-              fi
-
-              # Set laravel keys and migrate
-              run-in-sail php artisan passport:keys
-              run-in-sail php artisan migrate
-            '';
           })
 
           # Starts the docker daemon, the sail daemon and vite. After CTRL+C on vite the daemons are killed again
@@ -280,6 +263,7 @@
           };
         };
 
+        # The actual shell config
         devShells.default = pkgs.mkShell {
           # These git env variables define who is commiting
           GIT_AUTHOR_NAME = gitConfig.user.name;
