@@ -59,9 +59,10 @@
           vscode = pkgs.vscodium;
           vscodeExtensions =
           let
-            vscodeExtensions = inputs.nix-vscode-extensions.extensions.${system};
+            exts = inputs.nix-vscode-extensions.extensions.${system};
           in [
-            vscodeExtensions.vscode-marketplace.xdebug.php-debug
+            exts.vscode-marketplace.xdebug.php-debug
+	          exts.open-vsx.vue.volar
           ];
         };
 
@@ -73,6 +74,7 @@
           };
           "php.validate.executablePath" = lib.getExe pkgs.php83;
           "php.debug.executablePath" = lib.getExe pkgs.php83;
+          "git.confirmSync" = false;
         };
 
 
@@ -88,6 +90,27 @@
           (pkgs.writeShellApplication {
             name = "run-in-sail";
             text = ''sudo ./vendor/bin/sail exec --user root laravel.test """$@"""'';
+          })
+
+          # A wrapper that restarts vite when a change accours in the "resources" dir
+          (pkgs.writeShellApplication {
+            name = "vite-reloader";
+            text = ''
+              # Directory to watch
+              WATCH_DIR="resources"
+
+              # Start watching the directory using inotifywait
+              ${pkgs.inotify-tools}/bin/inotifywait -m -r -e modify,create,delete,move "$WATCH_DIR" --format '%w%f' |
+              while read -r FILE
+              do
+                  # kill yourself when vite is not running anymore
+                  if [ "$(pidof ${pkgs.nodejs_18}/bin/node)" == "" ]; then
+                    exit
+                  fi
+                  echo "Detected change in $FILE, reloading vite"
+                  touch vite.config.js
+              done
+            '';
           })
 
           # Starts the docker daemon, the sail daemon and vite. After CTRL+C on vite the daemons are killed again
@@ -121,6 +144,9 @@
                 echo "The ./storage directory does not have the 777 permission, without it the sail user in the container cannot write to it. Sudo is required to add it."
                 sudo chmod -R 777 ./storage
               fi
+
+              # Start the custom vite reloader
+              vite-reloader &
 
               # run vite (This is listening to CTRL+C)
               # When the container has nodejs 20 then CTRL+C will literally crash it without the trap from above being triggered
@@ -295,13 +321,14 @@
             pre-commit install -f --hook-type pre-commit >/dev/null
 
             # .env setup (This can't be a symlink, laravel does not like that)
-            # I suppose 
-            #  1. converting the set to a string
-            #  2. writing that to nix store 
-            #  3. reading that string from the file in the store
-            #  4. finally echoing it into the .env file 
-            # might not the most straightforward method of doing that but who cares.
-            echo -e "$(cat ${writeDotEnv dotEnv})" > .env
+            # Also, only rewrite the .env if theres a change
+
+            newEnvPath="${writeDotEnv dotEnv}"
+            if [ "$(diff $newEnvPath .env)" != "" ]; then
+              echo "Updating .env"
+              echo -e "$(cat $newEnvPath)" > .env
+            fi
+            
           '';
         };
       in
