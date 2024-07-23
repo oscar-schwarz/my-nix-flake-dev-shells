@@ -146,7 +146,7 @@
               fi
 
               # Start the custom vite reloader
-              vite-reloader &
+              # vite-reloader &
 
               # run vite (This is listening to CTRL+C)
               # When the container has nodejs 20 then CTRL+C will literally crash it without the trap from above being triggered
@@ -166,7 +166,7 @@
           APP_ENV = "local";
           APP_DEBUG= "true";
           APP_NAME = "Laravel-Sail-App";
-          APP_URL = "http://0.0.0.0:8000"; # Using 8000 as its not a privileged port
+          APP_URL = "http://localhost:8000"; # Using 8000 as its not a privileged port
           APP_PORT = "8000";
           APP_KEY = "base64:Igl3VDbdMSWnCDABL7k9ioK8hJ1EKgM25kh6vnxUntQ="; # This has to be set
 
