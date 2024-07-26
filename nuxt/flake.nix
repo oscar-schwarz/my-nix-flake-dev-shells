@@ -21,8 +21,49 @@
       system:
       let
         # Aliases that simulate a module
-        pkgs = inputs.nixpkgs.legacyPackages.${system};
+        pkgs = import inputs.nixpkgs {
+          system = system; 
+          config = {
+            allowUnfree = true; # Android studio
+            android_sdk.accept_license = true; # Android SDK
+          };
+        };
         lib = pkgs.lib;
+
+        android = {
+          versions = {
+            tools = "26.1.1";
+            platformTools = "34.0.1";
+            buildTools = "34.0.0";
+            ndk = [ "22.1.7171670" "21.3.6528147" ];
+            cmake = "3.18.1";
+            emulator = "30.6.3";
+          };
+
+          platforms = [ "28" "29" "30" "34" ];
+          abis = [ "armeabi-v7a" "arm64-v8a" ];
+          extras = [ "extras;google;gcm" ];
+        };
+
+        androidSdk = (pkgs.androidenv.composeAndroidPackages {
+            toolsVersion = android.versions.tools;
+            platformToolsVersion = android.versions.platformTools;
+            buildToolsVersions = [ android.versions.buildTools ];
+            platformVersions = android.platforms;
+
+            includeEmulator = false;
+            includeSources = false;
+            includeSystemImages = false;
+
+            systemImageTypes = [ "google_apis_playstore" ];
+            abiVersions = android.abis;
+            cmakeVersions = [ android.versions.cmake ];
+
+            includeNDK = false;
+            useGoogleAPIs = false;
+            useGoogleTVAddOns = false;
+            includeExtras = android.extras;
+        });
 
         # Functions
         writeJson = set: pkgs.writeTextFile {
@@ -53,7 +94,8 @@
         };
 
         # PROGRAMS
-        nodejs = pkgs.nodejs_16;
+        nodejs = pkgs.nodejs_20;
+        chromium = pkgs.ungoogled-chromium;
 
 
         # VSCodium
@@ -81,12 +123,38 @@
         # Useful scripts
         shellScripts = [
 
-          # Starts the docker daemon, the sail daemon and vite. After CTRL+C on vite the daemons are killed again
+          # Starts the environment services
           (pkgs.writeShellApplication {
             name = "env-up";
             text = ''
               ${nodejs}/bin/npm install
+              ${lib.getExe chromium} http:/localhost:3000 --auto-open-devtools-for-tabs &
               ${nodejs}/bin/npm run dev
+            '';
+          })
+
+          (pkgs.writeShellApplication {
+            name = "android-install";
+            text = ''
+              ${nodejs}/bin/npm run build --debug
+              ${nodejs}/bin/npx capacitor update
+              ${nodejs}/bin/npx cap sync android
+              cd android
+              export JAVA_HOME="${pkgs.jdk17}"
+              export ANDROID_HOME="${androidSdk.androidsdk}/libexec/android-sdk"
+              export GRADLE_OPTS="-Dorg.gradle.project.android.aapt2FromMavenOverride=$ANDROID_HOME/build-tools/${android.versions.buildTools}/aapt2"
+              ./gradlew installDebug
+            '';
+          })
+
+          (pkgs.writeShellApplication {
+            name = "chrome-extension";
+            text = ''
+              CHROME_VERSION=$(chromium --version | awk '{print $2;exit}')
+              EXTENSION_ID="$1"
+              URL="https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx2,crx3&prodversion=$CHROME_VERSION&x=id%3D$EXTENSION_ID%26installsource%3Dondemand%26uc"
+              echo "$URL"
+              chromium "$URL"
             '';
           })
         ];
@@ -98,10 +166,10 @@
           NUXT_PUBLIC_OAUTH_REGISTRATION_URL = "https://beste.schule/oauth/join";
           NUXT_PUBLIC_OAUTH_TOKEN_URL = "https://beste.schule/oauth/token";
           NUXT_PUBLIC_BASE_URL = "http://localhost:3000";
-          NUXT_PUBLIC_OAUTH_CLIENT_ID = "";
-          NUXT_PUBLIC_OAUTH_CLIENT_ID_MOBILE = "";
-          NUXT_PUBLIC_OAUTH_CALLBACK_URL = "http://localhost:3000/";
-          NUXT_PUBLIC_OAUTH_CALLBACK_URL_MOBILE = "schule.beste:/";
+          NUXT_PUBLIC_OAUTH_CALLBACK_URL = "http://localhost:3000/login";
+          NUXT_PUBLIC_OAUTH_CLIENT_ID = "106";
+          NUXT_PUBLIC_OAUTH_CLIENT_ID_MOBILE = "105";
+          NUXT_PUBLIC_OAUTH_CALLBACK_URL_MOBILE = "schule.beste:/login";
         };
 
 
@@ -116,6 +184,7 @@
           exclude = [
             ".envrc"
             ".direnv"
+            ".vscode"
           ];
         };
 
@@ -134,8 +203,10 @@
             vscodiumWithExtensions
 
             # You probably won't need these packages because 'env-up' should deal with them but here you go anyway
-            nodejs # See above in 'env-up' for explanation
+            nodejs
+            chromium
             pkgs.git
+            pkgs.android-tools
           ];
 
           # Generate necessary files and create symlinks to them
