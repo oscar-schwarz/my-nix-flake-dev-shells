@@ -137,13 +137,14 @@
             name = "android-install";
             text = ''
               ${nodejs}/bin/npm run build --debug
-              ${nodejs}/bin/npx capacitor update
               ${nodejs}/bin/npx cap sync android
               cd android
               export JAVA_HOME="${pkgs.jdk17}"
               export ANDROID_HOME="${androidSdk.androidsdk}/libexec/android-sdk"
               export GRADLE_OPTS="-Dorg.gradle.project.android.aapt2FromMavenOverride=$ANDROID_HOME/build-tools/${android.versions.buildTools}/aapt2"
               ./gradlew installDebug
+
+              adb shell am start -n de.schulverwalter.beste/de.schulverwalter.beste.MainActivity
             '';
           })
 

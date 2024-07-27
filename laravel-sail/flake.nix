@@ -92,27 +92,6 @@
             text = ''sudo ./vendor/bin/sail exec --user root laravel.test """$@"""'';
           })
 
-          # A wrapper that restarts vite when a change accours in the "resources" dir
-          (pkgs.writeShellApplication {
-            name = "vite-reloader";
-            text = ''
-              # Directory to watch
-              WATCH_DIR="resources"
-
-              # Start watching the directory using inotifywait
-              ${pkgs.inotify-tools}/bin/inotifywait -m -r -e modify,create,delete,move "$WATCH_DIR" --format '%w%f' |
-              while read -r FILE
-              do
-                  # kill yourself when vite is not running anymore
-                  if [ "$(pidof ${pkgs.nodejs_18}/bin/node)" == "" ]; then
-                    exit
-                  fi
-                  echo "Detected change in $FILE, reloading vite"
-                  touch vite.config.js
-              done
-            '';
-          })
-
           # Starts the docker daemon, the sail daemon and vite. After CTRL+C on vite the daemons are killed again
           (pkgs.writeShellApplication {
             name = "env-up";
@@ -145,9 +124,6 @@
                 sudo chmod -R 777 ./storage
               fi
 
-              # Start the custom vite reloader
-              # vite-reloader &
-
               # run vite (This is listening to CTRL+C)
               # When the container has nodejs 20 then CTRL+C will literally crash it without the trap from above being triggered
               ${pkgs.nodejs_18}/bin/npm run dev
@@ -166,8 +142,9 @@
           APP_ENV = "local";
           APP_DEBUG= "true";
           APP_NAME = "Laravel-Sail-App";
-          APP_URL = "http://localhost:8000"; # Using 8000 as its not a privileged port
+          APP_URL = "http://localhost:8000";
           APP_PORT = "8000";
+          VITE_PORT = "5173";
           APP_KEY = "base64:Igl3VDbdMSWnCDABL7k9ioK8hJ1EKgM25kh6vnxUntQ="; # This has to be set
 
           TOKEN_VALID = "14";
@@ -195,7 +172,7 @@
 
           # Whether report generation is dispatched async (default true).
           # Use false for debugging to catch break points in ReportProcessor
-          REPORT_DISPATCH_ASYNC = "true";
+          REPORT_DISPATCH_ASYNC = "false";
 
           # For debugging: Allows to execute large reports without writing the result to cache
           # This allows to read the reports' SQL queries in the API response
