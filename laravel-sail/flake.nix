@@ -326,8 +326,14 @@
             try-symlink .pre-commit-config.yaml "${writeYaml gitConfig.pre-commit-config}" 
             pre-commit install -f --hook-type pre-commit >/dev/null
 
-            # .env setup
-            try-symlink .env "${writeDotEnv dotEnv}"
+            # .env setup (This can't be a symlink, laravel does not like that)
+            # Also, only rewrite the .env if theres a change
+
+            newEnvPath="${writeDotEnv dotEnv}"
+            if [ "$(diff $newEnvPath .env)" != "" ]; then
+              echo "Updating .env"
+              echo -e "$(cat $newEnvPath)" > .env
+            fi
             
           '';
         };
