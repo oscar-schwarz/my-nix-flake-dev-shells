@@ -330,6 +330,7 @@
             # Also, only rewrite the .env if theres a change
 
             newEnvPath="${writeDotEnv dotEnv}"
+            touch .env # to make diff never fail
             if [ "$(diff $newEnvPath .env)" != "" ]; then
               echo "Updating .env"
               echo -e "$(cat $newEnvPath)" > .env
