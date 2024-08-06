@@ -135,6 +135,35 @@
             name = "check-types-ts";
             text = ''grep -o '^export type \w\+' "''${@}" | sort --check'';
           })
+
+          # Create a symlink with additional checks
+          (pkgs.writeShellApplication {
+            name = "try-symlink";
+            text = ''
+              FILE="$1"
+              STORE="$2"
+
+              # Check file if it exists
+              if [ -e  "$FILE" ]; then
+
+                # Only update on change
+                DIFF=$(diff "$STORE" "$FILE")
+                if [ "$DIFF" = "" ]; then
+                  exit 0
+                fi
+                
+                # Only overwrite symlink when FILE is already a symlink
+                SYMLINK=$(readlink "$FILE")
+                if [ "$SYMLINK" = "" ]; then
+                  echo "cannot create symlink at $FILE. Move it to another location to use this flake."
+                  exit 0
+                fi
+              fi
+
+              echo "Updating $FILE"
+              ln -fs "$STORE" "$FILE"
+            '';
+          })
         ];
 
 
@@ -288,23 +317,17 @@
 
             # VSCodium user settings
             mkdir .vscode -p
-            ln -fs ${writeJson vscodeUserSettings} .vscode/settings.json
+            try-symlink .vscode/settings.json ${writeJson vscodeUserSettings} 
 
             # Git exclude
-            ln -fs "${writeList gitConfig.exclude}" .git/info/exclude
+            try-symlink .git/info/exclude "${writeList gitConfig.exclude}" 
 
             # Pre commit config
-            ln -fs "${writeYaml gitConfig.pre-commit-config}" .pre-commit-config.yaml
+            try-symlink .pre-commit-config.yaml "${writeYaml gitConfig.pre-commit-config}" 
             pre-commit install -f --hook-type pre-commit >/dev/null
 
-            # .env setup (This can't be a symlink, laravel does not like that)
-            # Also, only rewrite the .env if theres a change
-
-            newEnvPath="${writeDotEnv dotEnv}"
-            if [ "$(diff $newEnvPath .env)" != "" ]; then
-              echo "Updating .env"
-              echo -e "$(cat $newEnvPath)" > .env
-            fi
+            # .env setup
+            try-symlink .env "${writeDotEnv dotEnv}"
             
           '';
         };
