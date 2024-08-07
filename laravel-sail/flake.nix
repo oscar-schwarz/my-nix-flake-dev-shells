@@ -93,9 +93,17 @@
           })
 
           # Starts the docker daemon, the sail daemon and vite. After CTRL+C on vite the daemons are killed again
+          # pass "debug" as an argument to get a verbose output
           (pkgs.writeShellApplication {
             name = "env-up";
             text = ''
+              ARG1=''${1:-normal}
+              if [ "$ARG1" == "debug" ]; then
+                DEBUG=true
+              else
+                DEBUG=false
+              fi
+
               # Install sail
               ${lib.getExe pkgs.php83Packages.composer} install
 
@@ -104,14 +112,29 @@
               sudo echo "Access granted"
 
               # Run docker daemon
-              # remove ">/dev/null 2>&1" for debugging, otherwise that info litters the terminal
-              sudo ${pkgs.docker}/bin/dockerd &#>/dev/null 2>&1 &
+              if $DEBUG; then
+                sudo ${pkgs.docker}/bin/dockerd &
+              else
+                sudo ${pkgs.docker}/bin/dockerd >/dev/null 2>&1 &
+              fi
               
               # Wait for docker to boot
               sleep 3
 
               # Run sail container
               sail up -d
+
+              # insert xdebug config and restart container (yeah I know, nasty)
+              run-in-sail cat /etc/php/8.3/cli/php.ini > php.ini
+              if [ "$(grep xdebug < php.ini)" == "" ]; then
+                echo "Injecting php xdebug config"
+                echo -e "[xdebug]\\nxdebug.start_with_request = yes" >> php.ini 
+                run-in-sail cp php.ini /etc/php/8.3/cli/php.ini
+                echo "Restart container for injection to take effect"
+                sail down
+                sail up -d
+              fi
+              rm php.ini
 
               # Run install node modules
               run-in-sail npm install
@@ -126,7 +149,11 @@
 
               # run vite (This is listening to CTRL+C)
               # When the container has nodejs 20 then CTRL+C will literally crash it without the trap from above being triggered
-              ${pkgs.nodejs_18}/bin/npm run dev
+              if $DEBUG; then
+                run-in-sail npm run dev -- --debug
+              else
+                run-in-sail npm run dev
+              fi
             '';
           })
 
@@ -212,12 +239,6 @@
 
           # XDebug config
           SAIL_XDEBUG_MODE = "develop,debug,coverage";
-	        SAIL_XDEBUG_CONFIG = 
-               "client_host=0.0.0.0"
-            + " client_port=9003" # Make sure that this TCP port is allowed by your firewall (This took me literal days to find out)
-            + " start_with_request=yes"
-            + " log=/tmp/xdebug.log"
-          ;
 
           # Pusher variables (I don't use pusher, thats to disable the warning about 
           # them not being defined)
