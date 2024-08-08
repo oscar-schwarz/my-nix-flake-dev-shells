@@ -77,30 +77,6 @@
           ];
         });
 
-        # VSCodium user settings
-        vscodeConfig = {
-          settings = {
-            "workbench.colorTheme" = "Solarized Dark";
-            "files.exclude" = {
-              "**/.git" = false;
-            };
-            "php.validate.executablePath" = lib.getExe pkgs.php83;
-            "php.debug.executablePath" = lib.getExe pkgs.php83;
-            "git.confirmSync" = false;
-          };
-          keybindings = [
-            {
-                key = "Escape";
-                command = "extension.jumpy-exit";
-                when = "editorTextFocus && jumpy.isJumpyMode";
-            }
-            {
-                key = "shift+alt+f";
-                command = "extension.jumpy-line";
-            }
-          ];
-        };
-
 
         # Useful scripts
         shellScripts = [
@@ -136,7 +112,6 @@
               sudo echo "Access granted"
 
 
-
               # ---- Start containers ----
 
               # Run docker daemon
@@ -157,7 +132,6 @@
               run-in-sail npm install
               # revert the package-lock changes
               ${lib.getExe pkgs.git} restore package-lock.json
-
 
 
               # ---- Hacks and workarounds ----
@@ -193,6 +167,7 @@
                 run-in-sail npm run dev
               fi
 
+
               # ---- Kill services again (after CTRL+C) ----
 
               echo "SIGINT received, shutting down."
@@ -214,27 +189,23 @@
               FILE="$1"
               STORE="$2"
 
-              # Check file if it exists
-              if [ -e  "$FILE" ]; then
-
-                # Only update on change
-                DIFF=$(diff "$STORE" "$FILE")
-                if [ "$DIFF" = "" ]; then
-                  exit 0
-                fi
-                
-                # Only overwrite symlink when FILE is already a symlink
-                SYMLINK=$(readlink "$FILE")
-                if [ "$SYMLINK" = "" ]; then
-                  echo "cannot create symlink at $FILE. Move it to another location to use this flake."
-                  exit 0
-                fi
-              else
+              # If file doesn't exist create it
+              if [ ! -f  "$FILE" ]; then
                 touch "$FILE"
               fi
 
-              echo "Updating $FILE"
-              ln -fs "$STORE" "$FILE"
+              # Only overwrite symlink when FILE is already a symlink
+              SYMLINK=$(readlink "$FILE")
+              if [ "$SYMLINK" == "" ]; then
+                echo "cannot create symlink at $FILE. Move it to another location to use this flake."
+                exit
+              fi
+
+              # Only update on change
+              if [ "$SYMLINK" != "$STORE" ]; then
+                echo "Updating $FILE"
+                ln -fs "$STORE" "$FILE"
+              fi
             '';
           })
         ];
@@ -293,6 +264,34 @@
           PUSHER_APP_SECRET= "app-secret";
         };
 
+        # VSCodium user settings
+        vscodeConfig = {
+          settings = {
+            "workbench.colorTheme" = "Solarized Dark";
+            "files.exclude" = {
+              "**/.git" = false;
+            };
+            "php.validate.executablePath" = lib.getExe pkgs.php83;
+            "php.debug.executablePath" = lib.getExe pkgs.php83;
+            "git.confirmSync" = false;
+          };
+          keybindings = [
+            {
+                key = "Escape";
+                command = "extension.jumpy-exit";
+                when = "editorTextFocus && jumpy.isJumpyMode";
+            }
+            {
+                key = "shift+enter";
+                command = "extension.jumpy-line";
+            }
+            {
+                key = "backspace";
+                command = "extension.jumpy-word";
+                when = "editorTextFocus && jumpy.isJumpyMode";
+            }
+          ];
+        };
 
         # Git config
         # This config structure is just for readability
