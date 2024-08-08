@@ -55,26 +55,50 @@
 
         # VSCodium
         # Sets vscodium as the VSCode package and includes extensions
-        vscodiumWithExtensions = pkgs.vscode-with-extensions.override {
-          vscode = pkgs.vscodium;
+        vscodiumWithExtensions = (pkgs.vscode-with-extensions.override {
+          # Add a custom default commandline parameter to use a different userdata dir
+          vscode = pkgs.vscodium.overrideAttrs (oldAttrs: {
+            postFixup = oldAttrs.postFixup + ''
+              mkdir -p $out/bin
+              cat > $out/bin/codium <<EOF
+              #!${pkgs.stdenv.shell}
+              exec ${lib.getExe pkgs.vscodium} --user-data-dir .vscode/user "\$@"
+              EOF
+              chmod +x $out/bin/codium
+            '';
+          });
           vscodeExtensions =
           let
             exts = inputs.nix-vscode-extensions.extensions.${system};
           in [
             exts.vscode-marketplace.xdebug.php-debug
 	          exts.open-vsx.vue.volar
+            exts.vscode-marketplace.wmaurer.vscode-jumpy
           ];
-        };
+        });
 
         # VSCodium user settings
-        vscodeUserSettings = {
-          "workbench.colorTheme" = "Solarized Dark";
-          "files.exclude" = {
-            "**/.git" = false;
+        vscodeConfig = {
+          settings = {
+            "workbench.colorTheme" = "Solarized Dark";
+            "files.exclude" = {
+              "**/.git" = false;
+            };
+            "php.validate.executablePath" = lib.getExe pkgs.php83;
+            "php.debug.executablePath" = lib.getExe pkgs.php83;
+            "git.confirmSync" = false;
           };
-          "php.validate.executablePath" = lib.getExe pkgs.php83;
-          "php.debug.executablePath" = lib.getExe pkgs.php83;
-          "git.confirmSync" = false;
+          keybindings = [
+            {
+                key = "Escape";
+                command = "extension.jumpy-exit";
+                when = "editorTextFocus && jumpy.isJumpyMode";
+            }
+            {
+                key = "shift+alt+f";
+                command = "extension.jumpy-line";
+            }
+          ];
         };
 
 
@@ -111,18 +135,32 @@
               echo "This flake needs sudo access to work properly."
               sudo echo "Access granted"
 
+
+
+              # ---- Start containers ----
+
               # Run docker daemon
               if $DEBUG; then
                 sudo ${pkgs.docker}/bin/dockerd &
               else
                 sudo ${pkgs.docker}/bin/dockerd >/dev/null 2>&1 &
               fi
+              DOCKER_PID="$!"
               
               # Wait for docker to boot
               sleep 3
 
               # Run sail container
               sail up -d
+
+              # Run install node modules
+              run-in-sail npm install
+              # revert the package-lock changes
+              ${lib.getExe pkgs.git} restore package-lock.json
+
+
+
+              # ---- Hacks and workarounds ----
 
               # insert xdebug config and restart container (yeah I know, nasty)
               run-in-sail cat /etc/php/8.3/cli/php.ini > php.ini
@@ -131,15 +169,9 @@
                 echo -e "[xdebug]\\nxdebug.start_with_request = yes" >> php.ini 
                 run-in-sail cp php.ini /etc/php/8.3/cli/php.ini
                 echo "Restart container for injection to take effect"
-                sail down
-                sail up -d
+                sail restart laravel.test
               fi
               rm php.ini
-
-              # Run install node modules
-              run-in-sail npm install
-              # revert the package-lock changes
-              ${lib.getExe pkgs.git} restore package-lock.json
 
               # Little hack to fix permissions in laravel storage
               if [ "$(stat -c "%a" ./storage)" != "777" ]; then
@@ -147,13 +179,25 @@
                 sudo chmod -R 777 ./storage
               fi
 
+              # on nodejs 20 ctrl+c will exit failure which normally stops a bash script entirely
+              # instead of continuing to the shutting down step, this prevents that
+              set +e
+
+
+              # ---- Vite ---- 
+
               # run vite (This is listening to CTRL+C)
-              # When the container has nodejs 20 then CTRL+C will literally crash it without the trap from above being triggered
               if $DEBUG; then
                 run-in-sail npm run dev -- --debug
               else
                 run-in-sail npm run dev
               fi
+
+              # ---- Kill services again (after CTRL+C) ----
+
+              echo "SIGINT received, shutting down."
+              sail down
+              kill "$DOCKER_PID"
             '';
           })
 
@@ -185,6 +229,8 @@
                   echo "cannot create symlink at $FILE. Move it to another location to use this flake."
                   exit 0
                 fi
+              else
+                touch "$FILE"
               fi
 
               echo "Updating $FILE"
@@ -338,7 +384,8 @@
 
             # VSCodium user settings
             mkdir .vscode -p
-            try-symlink .vscode/settings.json ${writeJson vscodeUserSettings} 
+            try-symlink .vscode/user/User/settings.json ${writeJson vscodeConfig.settings}
+            try-symlink .vscode/user/User/keybindings.json ${writeJson vscodeConfig.keybindings}
 
             # Git exclude
             try-symlink .git/info/exclude "${writeList gitConfig.exclude}" 
