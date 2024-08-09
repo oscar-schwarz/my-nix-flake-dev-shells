@@ -73,7 +73,7 @@
           in [
             exts.vscode-marketplace.xdebug.php-debug
 	          exts.open-vsx.vue.volar
-            exts.vscode-marketplace.wmaurer.vscode-jumpy
+            exts.vscode-marketplace.davidlgoldberg.jumpy2
           ];
         });
 
@@ -203,10 +203,45 @@
 
               # Only update on change
               if [ "$SYMLINK" != "$STORE" ]; then
-                echo "Updating $FILE"
+                echo "Updating $FILE"w
                 ln -fs "$STORE" "$FILE"
               fi
             '';
+          })
+
+          # Wrapper for the api of the application
+          # make sure to have the api token as an env variable TOKEN_L2 
+          (pkgs.writeShellApplication {
+            name = "env-api";
+            runtimeInputs = [
+              (pkgs.writeScriptBin "api.nu" ''
+                #! ${lib.getExe pkgs.nushell}
+                def main [ path: string ...select: cell-path --token (-t): string --explore (-x) ] {
+                  let token = if $token == null {
+                    echo $env.TOKEN_L2
+                  } else {
+                    echo $token
+                  }
+                  let path = if ($path | str starts-with "/") {
+                    echo $path
+                  } else {
+                    echo $"/($path)"
+                  }
+                  http get $"http://localhost:8000/api($path)" --allow-errors --full --headers [
+                      "Accept" "application/json"
+                      "Authorization" $"Bearer ($token)"
+                    ]
+                  | if $in.status == 200 and $select != null {
+                    $in.body.data | select ...$select | if $explore { explore } else { echo $in }
+                  } else if $in.status == 200 {
+                    $in.body.data | if $explore { explore } else { echo $in }
+                  } else {
+                    $in.body.message
+                  }
+                }              
+              '')
+            ];
+            text = ''api.nu "$@"'';
           })
         ];
 
@@ -276,20 +311,11 @@
             "git.confirmSync" = false;
           };
           keybindings = [
-            {
-                key = "Escape";
-                command = "extension.jumpy-exit";
-                when = "editorTextFocus && jumpy.isJumpyMode";
-            }
-            {
-                key = "shift+enter";
-                command = "extension.jumpy-line";
-            }
-            {
-                key = "backspace";
-                command = "extension.jumpy-word";
-                when = "editorTextFocus && jumpy.isJumpyMode";
-            }
+            # {
+            #     key = "backspace";
+            #     command = "extension.jumpy-exit";
+            #     when = "editorTextFocus && jumpy.isJumpyMode";
+            # }
           ];
         };
 
